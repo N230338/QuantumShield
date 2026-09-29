@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101619">
+  <title>QuantumShield | Communication Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer onerror="window.__chartCdnFailed = true"></script>
+  <script src="/vendor/chart-fallback.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="sidebar app-header">
+      <a class="brand" href="#dashboard" aria-label="QuantumShield dashboard">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>QUANTUM<span>SHIELD</span></strong><small>SECURE GOVERNMENT COMMUNICATION</small></span>
+      </a>
+      <nav class="side-nav" aria-label="Main navigation">
+        <svg class="dashboard-nav-mark" viewBox="0 0 36 20" aria-hidden="true"><path d="M2 10h9l4-6h8l5 6h6M11 10l4 6h8l5-6"/><circle class="dashboard-nav-pulse" cx="2" cy="10" r="2"/></svg>
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="history">History</button>
+      </nav>
+    </header>
+
+    <main class="main-shell">
+      <div class="simulation-banner"><span class="banner-icon">i</span>Simulation / demonstration prototype – no physical quantum network is used.</div>
+      <header class="topbar">
+        <div class="topbar-title"><p class="eyebrow">QUANTUM KEY DISTRIBUTION / CLASSICAL MESSAGE PROTECTION</p><h1>QUANTUMSHIELD <span>— Quantum Secure Communication Dashboard</span></h1></div>
+        <div class="topbar-network-hero" aria-label="QuantumShield departmental communication network">
+          <svg class="dashboard-network-art" viewBox="0 0 960 220" role="img" aria-label="Animated circuit network linking sender and receiver departments through QuantumShield">
+            <defs><linearGradient id="network-trace-gradient" x1="0" x2="1"><stop offset="0" stop-color="#63d7ef" stop-opacity=".2"/><stop offset=".48" stop-color="#9d8cff"/><stop offset="1" stop-color="#63d7ef" stop-opacity=".2"/></linearGradient><filter id="network-glow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+            <path class="network-trace" d="M105 111h222l42-48h222l42 48h222M105 111h222l42 48h222l42-48h222"/>
+            <path class="network-flow network-flow-upper" d="M105 111h222l42-48h222l42 48h222"/>
+            <path class="network-flow network-flow-lower" d="M105 111h222l42 48h222l42-48h222"/>
+            <circle class="network-endpoint" cx="105" cy="111" r="15"/><circle class="network-endpoint" cx="855" cy="111" r="15"/>
+            <path class="network-shield" d="M480 23l70 28v48c0 48-31 77-70 97-39-20-70-49-70-97V51z"/>
+            <path class="network-lock" d="M463 101v-9a17 17 0 0 1 34 0v9m-39 0h44v34h-44z"/>
+            <circle class="network-particle network-particle-one" r="4" cy="111"/><circle class="network-particle network-particle-two" r="4" cy="111"/>
+          </svg>
+        </div>
+        <div class="top-meta"><span class="status-pip"></span><span>API CONNECTED</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false">Light mode</button><time id="clock">--:--:--</time></div>
+      </header>
+
+      <section class="view active" id="view-dashboard" aria-labelledby="dashboard-title">
+        <div class="view-heading"><div><p class="eyebrow">GOVERNMENT QUANTUM SECURITY OPERATIONS</p><h2 id="dashboard-title">Secure Government Communication</h2></div><span class="run-id" id="dashboard-session">NO ACTIVE SESSION</span></div>
+        <div class="dashboard-tools">
+          <section class="action-panel"><div class="panel-heading"><div><p class="eyebrow">SIMULATION TOOLS</p><h3>Inspect security operations</h3></div><span class="panel-mark">TOOLS</span></div><div class="button-row"><button class="button outline" data-view-link="bb84" type="button">BB84 Simulation</button><button class="button outline" data-view-link="circuit" type="button">Quantum Circuit</button><button class="button warning" data-view-link="attack" type="button">Attack Simulation</button><button class="button outline" data-view-link="monitoring" type="button">Security Monitoring</button></div></section>
+        </div>
+        <div class="party-strip"><div><span class="party-label">SENDER</span><strong>Sender</strong></div><span class="route-line"><i></i><b>KEY ESTABLISHMENT</b><i></i></span><div><span class="party-label">RECEIVER</span><strong>Receiver</strong></div></div>
+        <div class="dashboard-grid">
+          <aside class="composer-column">
+            <section class="composer-panel">
+              <div class="panel-heading"><div><p class="eyebrow">ENCRYPTED MESSAGE FLOW</p><h3>Secure Messaging</h3></div><span class="panel-mark">AES-GCM</span></div>
+              <div class="field-row two-up">
+                <label class="field-label" for="sender-select">Sender<select id="sender-select" class="department-select"></select></label>
+                <label class="field-label" for="receiver-select">Receiver<select id="receiver-select" class="department-select"></select></label>
+              </div>
+              <div id="department-warning" class="field-warning hidden">Sender and receiver must be different departments. Please select different departments.</div>
+              <label class="field-label" for="message-textarea">Message</label>
+              <textarea id="message-textarea" maxlength="500" rows="8" placeholder="Enter confidential government message…"></textarea>
+              <div class="textarea-meta"><span id="message-counter">0/500</span></div>
+              <div class="field-row composer-actions">
+                <label class="qubit-field" for="qubits-input">Qubits<input id="qubits-input" type="number" min="8" max="512" value="256"></label>
+                <label class="toggle-field"><input id="eve-toggle" type="checkbox"><span>Simulate interception (Eve)</span></label>
+              </div>
+              <div class="advanced-box">
+                <button class="advanced-toggle" id="advanced-toggle" type="button" aria-expanded="false">Advanced <span>▾</span></button>
+                <div id="advanced-panel" class="advanced-panel hidden">
+                  <label class="field-label" for="seed-input">Optional seed<input id="seed-input" type="number" placeholder="Leave blank for fresh entropy"></label>
+                </div>
+              </div>
+              <button class="button primary full-width send-secure-btn" id="composer-send-button" type="button">
+                Encrypt &amp; Send Securely
+                <span class="spinner hidden" id="composer-spinner" aria-hidden="true"><i></i></span>
+              </button>
+              <div class="history-box">
+                <div class="panel-heading compact"><div><p class="eyebrow">HISTORY</p><h4>Recent messages</h4></div><span class="panel-mark">RECENT</span></div>
+                <ul id="message-history-list" class="message-history-list"></ul>
+              </div>
+            </section>
+          </aside>
+          <aside class="security-column">
+            <div class="security-panel">
+              <div class="panel-heading"><div><p class="eyebrow">LIVE SECURITY</p><h3>Security panel</h3></div><span class="panel-mark">STATUS</span></div>
+              <div class="security-stack">
+                <div class="security-row"><span>QKD status</span><strong id="status-qkd">Ready</strong></div>
+                <div class="security-row"><span>PQC status</span><strong id="status-pqc">NOT IMPLEMENTED</strong></div>
+                <div class="security-row"><span>Interception</span><strong id="status-interception">Not assessed</strong></div>
+                <div class="security-row"><span>Latest session</span><strong id="dashboard-session-copy">NO ACTIVE SESSION</strong></div>
+              </div>
+            </div>
+            <div class="security-panel inbox-panel">
+              <div class="panel-heading"><div><p class="eyebrow">INBOX</p><h3>Receiver</h3></div><span class="panel-mark">NEW</span></div>
+              <div class="inbox-message" id="receiver-inbox">Receiver: Home Affairs received no message yet.</div>
+              <button class="button receiver-button full-width" id="dashboard-decrypt-button" type="button" disabled>Decrypt Message</button>
+              <p class="dashboard-decrypted-message hidden" id="dashboard-decrypted-message" aria-live="polite"></p>
+              <p class="dashboard-decrypt-error hidden" id="dashboard-decrypt-error" role="alert"></p>
+            </div>
+          </aside>
+        </div>
+        <div class="status-grid">
+          <article class="status-card"><div class="card-top"><span>QKD STATUS</span><span class="card-index">01</span></div><strong id="status-qkd-inline" class="status-value">Ready</strong><small>BB84 simulation</small></article>
+          <article class="status-card pqc-card"><div class="card-top"><span>PQC STATUS</span><span class="card-index">02</span></div><strong id="status-pqc-inline" class="status-value">NOT IMPLEMENTED</strong><small>No PQC layer in normal or attack simulation</small></article>
+          <article class="status-card"><div class="card-top"><span>COMMUNICATION</span><span class="card-index">03</span></div><strong id="status-communication" class="status-value">Not started</strong><small>AES-GCM message channel</small></article>
+          <article class="status-card"><div class="card-top"><span>INTERCEPTION</span><span class="card-index">04</span></div><strong id="status-interception-inline" class="status-value">Not assessed</strong><small>QBER is not proof of cause</small></article>
+        </div>
+        <section class="session-graph-panel" aria-labelledby="session-graph-title">
+          <div class="panel-heading"><div><p class="eyebrow">REAL MESSAGE SESSIONS</p><h3 id="session-graph-title">BB84 key generation by message</h3></div><span class="panel-mark">API DATA</span></div>
+          <div class="chart-wrap"><canvas id="session-key-chart" aria-label="Matching positions, sifted length, and final key length across recent messages"></canvas></div>
+          <p class="chart-note" id="session-key-note">No message sessions yet. Send a message to compare returned matching and key lengths.</p>
+        </section>
+        <div class="dashboard-note"><span class="note-rule"></span><p>Quantum key distribution and message protection are demonstrated using a local simulation; no physical quantum network is used.</p></div>
+      </section>
+
+      <section class="view" id="view-history" aria-labelledby="history-title">
+        <div class="view-heading"><div><p class="eyebrow">MESSAGE RECORDS</p><h2 id="history-title">History</h2></div><span class="run-id">RECENT ACTIVITY</span></div>
+        <section class="history-page-panel" aria-label="Message history"></section>
+      </section>
+
+      <section class="view" id="view-bb84" aria-labelledby="bb84-title">
+        <div class="view-heading"><div><p class="eyebrow">KEY ESTABLISHMENT FLOW</p><h2 id="bb84-title">BB84 Simulation</h2></div><span class="simulation-tag">AER / SHOTS 1</span></div>
+        <div class="control-row"><label class="input-label">QUBITS <input id="qubit-count" type="number" min="8" max="512" value="256"></label><label class="check-label"><input id="reveal-key" type="checkbox"><span class="check-ui"></span>Reveal key bits (demo)</label><button class="button primary" id="run-normal">Run BB84 <span>→</span></button><span class="loading hidden" id="run-loading"><i></i>SIMULATING</span></div>
+        <div class="metric-strip" id="bb84-metrics"><div><small>TRANSMITTED</small><strong id="metric-qubits">—</strong></div><div><small>MATCHING BASES</small><strong id="metric-matching">—</strong></div><div><small>SIFTED LENGTH</small><strong id="metric-sifted">—</strong></div><div><small>QBER SAMPLE</small><strong id="metric-qber">—</strong></div><div><small>FINAL KEY</small><strong id="metric-key">—</strong></div></div>
+        <div class="decision-line" id="decision-line"><span class="decision-light"></span><strong id="decision-status">Awaiting simulation</strong><span id="decision-reason">Run BB84 to establish a simulated key.</span></div>
+        <div class="table-toolbar"><div><h3>Transmitted positions</h3><span id="table-count">First 64 of 0 positions</span></div><span class="legend"><i class="legend-match"></i>MATCH <i class="legend-discard"></i>DISCARDED <i class="legend-error"></i>ERROR</span></div>
+        <div class="table-wrap"><table><thead><tr><th>POS</th><th>ALICE BIT</th><th>ALICE BASIS</th><th>BOB BASIS</th><th>BOB BIT</th><th>RESULT</th></tr></thead><tbody id="bb84-table"><tr><td colspan="6" class="empty-cell">No run data yet.</td></tr></tbody></table></div>
+        <div class="key-reveal hidden" id="key-reveal-output"><span>DEMO KEY BITS</span><code id="key-reveal-bits"></code></div>
+      </section>
+
+      <section class="view" id="view-circuit" aria-labelledby="circuit-title">
+        <div class="view-heading"><div><p class="eyebrow">RUNTIME CIRCUIT DRAWING</p><h2 id="circuit-title">Quantum Circuit</h2></div><div class="segmented" role="group" aria-label="Circuit type"><button class="selected" data-circuit="normal">NORMAL</button><button data-circuit="attack">ATTACK</button></div></div>
+        <div class="circuit-layout"><section class="circuit-stage"><div class="panel-heading"><div><p class="eyebrow">QISKIT / FIRST 8 QUBITS</p><h3 id="circuit-label">Normal transmission circuit</h3></div><button class="icon-button" id="reload-circuit" title="Reload circuit" aria-label="Reload circuit">↻</button></div><div class="circuit-image" id="circuit-image"><span class="empty-state">Run BB84 to generate the circuit drawing.</span></div></section><section class="circuit-text-panel"><div class="panel-heading"><div><p class="eyebrow">TEXT DRAWING</p><h3>Gate sequence</h3></div></div><pre id="circuit-text">No circuit available.</pre></section></div>
+        <p class="footnote">Circuit images are generated on demand from the stored simulation run.</p>
+      </section>
+
+      <section class="view" id="view-attack" aria-labelledby="attack-title">
+        <div class="view-heading"><div><p class="eyebrow">CHANNEL OBSERVATION</p><h2 id="attack-title">Attack Simulation</h2></div><span class="status-pill" id="attack-status-pill">NO RUN</span></div>
+        <div class="button-row attack-actions"><button class="button outline" id="attack-normal">Normal Communication</button><button class="button warning" id="attack-run">Simulate Intercept &amp; Resend</button></div>
+        <div class="attack-flow" id="attack-flow" aria-label="Sender to receiver transmission path"><div class="flow-step">SENDER</div><span class="flow-link hidden" id="attack-eve-link"></span><div class="flow-step eve-step hidden" id="attack-eve-node">EVE / INTERCEPT</div><span class="flow-link"></span><div class="flow-step channel">QUANTUM CHANNEL</div><span class="flow-link"></span><div class="flow-step" id="attack-receiver-node">RECEIVER</div></div>
+        <div class="attack-result-summary" id="attack-result-summary" aria-live="polite">Run a BB84 simulation to show returned QBER and the security decision.</div>
+        <div class="attack-metrics"><div><small>QUBITS TRANSMITTED</small><strong id="attack-qubits">—</strong></div><div><small>MATCHING BASES</small><strong id="attack-matching">—</strong></div><div><small>SIFTED LENGTH</small><strong id="attack-sifted">—</strong></div><div><small>QBER SAMPLE</small><strong id="attack-qber">—</strong></div><div><small>KEY STATUS</small><strong id="attack-key-status">—</strong></div><div><small>INTERCEPTION STATUS</small><strong id="attack-interception">—</strong></div></div>
+        <aside class="explanation-band"><span class="explanation-symbol">!</span><p>Eve chooses a mismatched basis about half the time. Among positions kept after Alice and Bob compare bases, Bob then has about a 50% chance of a wrong bit in those cases: 0.5 × 0.5 ≈ 25% error for full interception. Channel noise or faults can also raise QBER; high QBER is consistent with possible interception but does not prove it.</p></aside>
+      </section>
+
+      <section class="view" id="view-messaging" aria-labelledby="messaging-title">
+        <div class="view-heading"><div><p class="eyebrow">CLASSICAL CIPHER / ESTABLISHED KEY</p><h2 id="messaging-title">Secure Messaging</h2></div><span class="message-mode">ACTUAL MESSAGE FLOW</span></div>
+        <div class="message-separation"><span class="separation-mark">≠</span><p>BB84 random bits are not the message. BB84 establishes a key; AES-GCM protects this actual message.</p></div>
+        <div class="messaging-grid"><section class="message-panel sender-panel"><div class="panel-heading"><div><p class="eyebrow">SENDER / DEPARTMENT</p><h3>Compose message</h3></div><span class="panel-mark">01</span></div><label class="field-label" for="sender-select">Sender</label><select id="sender-select" class="department-select"><option value="Defence">Defence</option></select><label class="field-label" for="receiver-select">Receiver</label><select id="receiver-select" class="department-select"><option value="Home Affairs">Home Affairs</option></select><div id="department-warning" class="field-warning hidden">Sender and receiver must be different departments. Please select different departments.</div><label class="field-label" for="actual-message">ACTUAL MESSAGE</label><textarea id="actual-message" rows="4">Government meeting at 10 AM</textarea><div class="verify-row"><button class="button outline" id="verify-key">Verify Key</button><span id="verify-result" class="inline-status">No key verified</span></div><button class="button primary full-width" id="encrypt-send" disabled>Encrypt &amp; Send <span>→</span></button><div class="cipher-output hidden" id="cipher-output"><div class="output-label">CIPHERTEXT / BASE64</div><code id="ciphertext-value"></code><div class="cipher-meta"><span>NONCE</span><code id="nonce-value"></code><span>SENDER FINGERPRINT</span><code id="sender-fingerprint"></code></div></div></section>
+          <section class="message-panel receiver-panel"><div class="panel-heading"><div><p class="eyebrow">RECEIVER / DEPARTMENT</p><h3>Receive message</h3></div><span class="panel-mark">02</span></div><div class="receiver-state" id="receiver-state"><span class="receiver-icon">B</span><strong>Waiting for encrypted message</strong><small>Bob decrypts with his own key copy.</small></div><button class="button receiver-button full-width" id="decrypt-message" disabled>Decrypt</button><div class="decrypted-output hidden" id="decrypted-output"><span class="output-label">RECOVERED MESSAGE</span><p id="recovered-message"></p><div class="fingerprint-compare"><span>RECEIVER FINGERPRINT</span><code id="receiver-fingerprint"></code><strong id="fingerprint-match"></strong></div></div></section></div>
+        <p class="footnote">A production QKD system also requires error correction, privacy amplification, and an authenticated classical channel.</p>
+      </section>
+
+      <section class="view" id="view-monitoring" aria-labelledby="monitoring-title">
+        <div class="view-heading"><div><p class="eyebrow">LIVE TELEMETRY / SIMULATION</p><h2 id="monitoring-title">Security Monitoring</h2></div><button class="button primary" id="run-comparison">Run comparison <span>→</span></button></div>
+        <div class="monitor-metrics"><div><small>QUBITS</small><strong id="monitor-qubits">—</strong></div><div><small>MATCHING BASES</small><strong id="monitor-matching">—</strong></div><div><small>SIFTED KEY LENGTH</small><strong id="monitor-sifted">—</strong></div><div><small>QBER / SAMPLE</small><strong id="monitor-qber">—</strong></div><div><small>ATTACK MODE</small><strong id="monitor-attack">—</strong></div><div><small>INTERCEPTION</small><strong id="monitor-interception">—</strong></div><div><small>KEY STATUS</small><strong id="monitor-key-status">—</strong></div><div><small>MESSAGE STATUS</small><strong id="monitor-message">—</strong></div></div>
+        <div class="monitor-decision" id="monitor-decision" aria-live="polite">Run a comparison to see QBER, threshold, security decisions, and detection data.</div>
+        <div class="job-progress hidden" id="job-progress"><div class="job-progress-label"><span id="job-label">COMPARISON RUNNING</span><span id="job-percent">0%</span></div><div class="progress-track"><i id="progress-value"></i></div></div>
+        <div class="charts-grid"><section class="chart-panel"><div class="panel-heading"><div><p class="eyebrow">NORMAL VS ATTACK</p><h3>QBER by run</h3></div><span class="chart-unit">QBER</span></div><div class="chart-wrap"><canvas id="qber-chart" aria-label="QBER across comparison runs"></canvas></div><div class="chart-legend"><span><i class="legend-normal"></i>Normal</span><span><i class="legend-attack"></i>Attack</span><span><i class="legend-threshold"></i>Threshold</span></div></section><section class="chart-panel"><div class="panel-heading"><div><p class="eyebrow">SAMPLE SIZE EFFECT</p><h3>Detection vs qubits</h3></div><span class="chart-unit">PROBABILITY</span></div><div class="chart-wrap"><canvas id="detection-chart" aria-label="Detection rate by number of qubits"></canvas></div><p class="chart-note" id="detection-note">Insufficient runs are shown as gaps, not zero detections.</p></section></div>
+        <div class="experiment-summary" id="experiment-summary"><span>No cached comparison yet.</span></div>
+      </section>
+
+      <footer class="footer"><span>QUANTUMSHIELD / SIMULATION PROTOTYPE</span><span>BB84 KEY ESTABLISHMENT · AES-GCM MESSAGE PROTECTION · PQC PLANNED</span></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

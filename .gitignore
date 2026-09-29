@@ -1,0 +1,19 @@
+# Python & Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Binaries & Temporary files
+cloudflared.exe
+*.log
+.DS_Store
+Thumbs.db

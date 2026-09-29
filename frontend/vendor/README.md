@@ -1,0 +1,1 @@
+The pinned Chart.js CDN is loaded first. If it is unavailable, `chart-fallback.js` provides a small local canvas renderer for the dashboard's simple line charts.
