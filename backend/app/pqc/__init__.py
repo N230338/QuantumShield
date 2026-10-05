@@ -1,1 +1,1 @@
-"""PQC integration boundary; algorithms are future scope."""
+"""Post-quantum key establishment using standardized ML-KEM-768."""

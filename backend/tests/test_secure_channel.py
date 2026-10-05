@@ -13,12 +13,14 @@ from backend.app.messaging.secure_channel import (
     KeyTooShortError,
     bits_to_bytes,
     check_key_usable,
+    derive_aes_key,
     decrypt_message,
     encrypt_message,
     key_fingerprint,
     receive_secure_message,
     send_secure_message,
 )
+from backend.app.pqc.interface import MLKEM768Provider
 
 MESSAGE = "Government meeting at 10 AM"
 
@@ -45,6 +47,69 @@ def test_normal_run_sends_and_receives_actual_message(accepted_result):
     encrypted = send_secure_message(accepted_result, MESSAGE)
 
     assert receive_secure_message(accepted_result, encrypted) == MESSAGE
+
+
+@pytest.mark.parametrize("mode", ["ml-kem", "hybrid"])
+def test_mlkem_and_hybrid_modes_encrypt_and_authenticate_message(accepted_result, mode):
+    exchange = MLKEM768Provider().establish_shared_secret()
+    encrypted = send_secure_message(
+        accepted_result,
+        MESSAGE,
+        mode=mode,
+        mlkem_secret=exchange.sender_secret,
+    )
+
+    assert encrypted.mode == mode
+    assert receive_secure_message(
+        accepted_result,
+        encrypted,
+        mlkem_secret=exchange.receiver_secret,
+    ) == MESSAGE
+
+
+@pytest.mark.parametrize("mode", ["ml-kem", "hybrid"])
+def test_mlkem_and_hybrid_modes_reject_tampered_ciphertext(accepted_result, mode):
+    exchange = MLKEM768Provider().establish_shared_secret()
+    encrypted = send_secure_message(
+        accepted_result,
+        MESSAGE,
+        mode=mode,
+        mlkem_secret=exchange.sender_secret,
+    )
+    changed = bytearray(encrypted.ciphertext)
+    changed[0] ^= 1
+
+    with pytest.raises(DecryptionError, match="authentication or decryption failed"):
+        receive_secure_message(
+            accepted_result,
+            replace(encrypted, ciphertext=bytes(changed)),
+            mlkem_secret=exchange.receiver_secret,
+        )
+
+
+def test_mode_and_route_are_domain_separated_in_key_derivation():
+    salt = b"s" * 16
+    bb84_bits = [1, 0, 1, 1] * 16
+    kem_secret = b"k" * 32
+
+    bb84_key = derive_aes_key("bb84", salt, bb84_key_bits=bb84_bits)
+    mlkem_key = derive_aes_key("ml-kem", salt, mlkem_secret=kem_secret)
+    hybrid_key = derive_aes_key(
+        "hybrid",
+        salt,
+        aad=b"sender -> receiver",
+        bb84_key_bits=bb84_bits,
+        mlkem_secret=kem_secret,
+    )
+    other_route_key = derive_aes_key(
+        "hybrid",
+        salt,
+        aad=b"sender -> other",
+        bb84_key_bits=bb84_bits,
+        mlkem_secret=kem_secret,
+    )
+
+    assert len({bb84_key, mlkem_key, hybrid_key, other_route_key}) == 4
 
 
 def test_alice_and_bob_key_fingerprints_match(accepted_result):
@@ -106,7 +171,21 @@ def test_encrypted_message_serializes_and_round_trips(accepted_result):
 
 
 def test_unicode_message_round_trips(accepted_result):
-    message = "सरकारी बैठक सुबह दस बजे"
+    message = "सरकारी बैठक सुबह दस बजे 🔐"
+    encrypted = send_secure_message(accepted_result, message)
+
+    assert receive_secure_message(accepted_result, encrypted) == message
+
+
+@pytest.mark.parametrize("message", ["x", "a" * 100, "b" * 1000, "c" * 10000])
+def test_long_message_round_trips_without_truncation(accepted_result, message):
+    encrypted = send_secure_message(accepted_result, message)
+
+    assert receive_secure_message(accepted_result, encrypted) == message
+
+
+def test_multiline_message_preserves_whitespace_and_line_breaks(accepted_result):
+    message = "  First line\nSecond line\r\n  Third line  "
     encrypted = send_secure_message(accepted_result, message)
 
     assert receive_secure_message(accepted_result, encrypted) == message
@@ -145,3 +224,16 @@ def test_check_key_usable_rejects_short_accepted_key(accepted_result):
 
     with pytest.raises(KeyTooShortError, match=r"256\+ qubits"):
         check_key_usable(short_result)
+
+
+def test_hybrid_send_rejects_short_accepted_bb84_key(accepted_result):
+    short_result = dict(accepted_result.__dict__)
+    short_result["alice_final_key"] = [0] * 63
+
+    with pytest.raises(KeyTooShortError):
+        send_secure_message(
+            short_result,
+            MESSAGE,
+            mode="hybrid",
+            mlkem_secret=b"k" * 32,
+        )

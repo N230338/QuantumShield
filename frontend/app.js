@@ -7,8 +7,6 @@ const state = {
   encrypted: null,
   currentCircuit: "normal",
   qberChart: null,
-  detectionChart: null,
-  sessionChart: null,
   keyVerifiedSession: null,
   toastTimer: null,
   departments: [],
@@ -64,6 +62,27 @@ function showStatusValue(id, value, className = "") {
   const element = byId(id);
   element.textContent = value;
   element.className = `status-value ${className}`.trim();
+}
+
+function showDemoStage(id, value, stateName) {
+  const element = byId(id);
+  element.textContent = value;
+  element.dataset.state = stateName;
+}
+
+function resetLiveSecurityStatus() {
+  showStatusValue("status-qkd", "RUNNING");
+  showStatusValue("status-qkd-inline", "RUNNING");
+  showStatusValue("status-qber", "PENDING");
+  showStatusValue("status-pqc", "WAITING", "pqc-status-value");
+  showStatusValue("status-hybrid", "WAITING");
+  showStatusValue("status-aes", "WAITING");
+  showStatusValue("status-decryption", "WAITING");
+  showDemoStage("demo-stage-bb84", "RUNNING", "running");
+  showDemoStage("demo-stage-mlkem", "WAITING", "waiting");
+  showDemoStage("demo-stage-hybrid", "WAITING", "waiting");
+  showDemoStage("demo-stage-aes", "WAITING", "waiting");
+  showDemoStage("demo-stage-receiver", "WAITING", "waiting");
 }
 
 function applyTheme(theme, persist = false) {
@@ -133,31 +152,38 @@ function updateMessageCounter() {
   const textarea = byId("message-textarea");
   const counter = byId("message-counter");
   if (!textarea || !counter) return;
-  counter.textContent = `${textarea.value.length}/500`;
+  counter.textContent = `${Array.from(textarea.value).length} characters`;
 }
 
 function renderHistory(entries) {
   const list = byId("message-history-list");
   if (!list) return;
   if (!entries.length) {
-    list.innerHTML = "<li><span>No recent messages yet.</span></li>";
+    const empty = document.createElement("li");
+    empty.textContent = "No recent messages yet.";
+    list.replaceChildren(empty);
     return;
   }
-  list.innerHTML = entries.slice(0, 8).map((entry) => `
-    <li data-session="${entry.session_id || ""}" title="Replay message">
-      <strong>${entry.sender} → ${entry.receiver}</strong>
-      <small>${entry.message_preview || "No preview"} · ${entry.decision || "status"} · ${formatHistoryTime(entry.time)}</small>
-      <small>${formatHistoryTimings(entry.timings_seconds, entry.blocked)}</small>
-    </li>
-  `).join("");
-  list.querySelectorAll("li").forEach((item) => {
-    item.addEventListener("click", () => {
-      const preview = item.querySelector("strong")?.textContent || "";
-      const messageText = byId("message-textarea");
-      if (messageText) messageText.value = messageText.value || "";
-      toast(`Replay selected: ${preview}`);
-    });
+  const items = entries.slice(0, 8).map((entry) => {
+    const item = document.createElement("li");
+    item.dataset.session = entry.session_id || "";
+    const route = document.createElement("strong");
+    route.textContent = `${entry.sender || "Sender"} → ${entry.receiver || "Receiver"}`;
+    const summary = document.createElement("small");
+    summary.textContent = `${entry.decision || "status"} · ${formatHistoryTime(entry.time)}`;
+    const timings = document.createElement("small");
+    timings.textContent = formatHistoryTimings(entry.timings_seconds, entry.blocked);
+    const plaintext = document.createElement("p");
+    plaintext.className = "history-plaintext";
+    plaintext.textContent = typeof entry.decrypted_message === "string"
+      ? entry.decrypted_message
+      : entry.blocked
+        ? "Message withheld; key establishment was rejected."
+        : "Plaintext is shown after receiver authentication.";
+    item.append(route, summary, timings, plaintext);
+    return item;
   });
+  list.replaceChildren(...items);
 }
 function formatHistoryTime(value) {
   if (!value) return "Time not returned";
@@ -172,7 +198,10 @@ function formatHistoryTimings(timings, blocked) {
   const duration = (seconds) => Number.isFinite(seconds) ? `${(seconds * 1000).toFixed(0)} ms` : "Not returned";
   const encryption = blocked ? "Not performed" : duration(timings.encryption);
   const decryption = blocked ? "Not performed" : duration(timings.decryption);
-  return `Total ${duration(timings.total)} · validation ${duration(timings.validation)} · BB84 ${duration(timings.bb84_key_establishment)} · encryption ${encryption} · decryption ${decryption}`;
+  const receiverDecryption = timings.receiver_decryption === undefined
+    ? "Awaiting receiver"
+    : duration(timings.receiver_decryption);
+  return `Total ${duration(timings.total)} · validation ${duration(timings.validation)} · BB84 ${duration(timings.bb84_key_establishment)} · ML-KEM ${duration(timings.mlkem_key_establishment)} · encryption ${encryption} · decryption ${decryption} · receiver ${receiverDecryption}`;
 }
 
 const PIPELINE_STEP_TITLES = [
@@ -184,10 +213,13 @@ const PIPELINE_STEP_TITLES = [
   "Receiver measures",
   "Bases compared and key sifted",
   "QBER sample checked",
-  "Security decision",
-  "Session key derived and message encrypted",
+  "QBER security decision",
+  "ML-KEM-768 key establishment",
+  "Mode-separated key derivation",
+  "AES-GCM encryption",
   "Ciphertext sent",
-  "Receiver decrypts",
+  "Receiver authenticates and decrypts",
+  "Message tampering check",
   "Message delivered or withheld",
 ];
 
@@ -221,7 +253,7 @@ function pipelineData(step, response) {
   };
   const qber = response.sample_qber;
   const qberText = Number.isFinite(qber) ? `${(qber * 100).toFixed(1)}%` : "Not available";
-  const accepted = !response.blocked && response.key_status === "ACCEPTED";
+  const accepted = !response.blocked;
   const senderFingerprint = response.key_fingerprints?.alice;
   const ciphertext = response.envelope?.ciphertext;
 
@@ -247,15 +279,21 @@ function pipelineData(step, response) {
     case 8:
       return [["Public sample size", String(response.sample_size ?? response.bb84?.sample_size ?? data.sample_size ?? "—")], ["Sample QBER", qberText]];
     case 9:
-      return [["Security decision", response.key_status || data.key_status || "Not returned"], ["Session ID", response.session_id || "Not returned"], ["Decision detail", response.reason || data.reason || "No additional reason returned"]];
+      return [["BB84 decision", response.key_status || data.key_status || "Not returned"], ["QBER threshold", `${((response.security_status?.qber_threshold ?? 0.11) * 100).toFixed(1)}%`], ["Decision detail", response.security_mode === "ml-kem" ? "QBER is reported but rejected QKD material is not used in ML-KEM mode." : response.reason || data.reason || "No additional reason returned"]];
     case 10:
-      return accepted ? [["Encryption", data.cipher || "Not returned"], ["Key fingerprint", senderFingerprint || "Not returned"], ["Authenticated route", data.aad || `${response.sender} -> ${response.receiver}`]] : [["Encryption", "Not performed: key was not accepted"], ["Key fingerprint", senderFingerprint || "Not returned"]];
+      return [["ML-KEM-768", data.status || "NOT_REQUIRED"], ["Encapsulation required", data.required ? "Yes" : "No"], ["Key establishment", "No private key or shared secret exposed"]];
     case 11:
-      return accepted ? [["Ciphertext", ciphertext ? `${ciphertext.slice(0, 48)}${ciphertext.length > 48 ? "…" : ""}` : "Not returned"], ["Transmission", "Encrypted envelope stored for this session"]] : [["Ciphertext", "Not created"], ["Transmission", "Blocked by security decision"]];
+      return [["Hybrid derivation", data.hybrid_derivation || "NOT_APPLICABLE"], ["KDF", "HKDF-SHA256 with mode and route domain separation"]];
     case 12:
-      return accepted ? [["Decryption", "Authenticated and completed"], ["Fingerprint match", typeof response.receiver?.fingerprints_match === "boolean" ? response.receiver.fingerprints_match ? "Yes" : "No" : "Not returned"], ["Receiver fingerprint", response.receiver?.fingerprint || "Not returned"]] : [["Decryption", "Not attempted"], ["Receiver status", "No ciphertext delivered"]];
+      return [["AES-GCM encryption", response.security_status?.aes_gcm_encryption || "NOT_PERFORMED"], ["Cipher", data.cipher || "AES-256-GCM"], ["Authenticated route", data.aad || `${response.sender} -> ${response.receiver}`]];
     case 13:
-      return accepted ? [["Delivery", "Message delivered"], ["Recovered message", response.receiver?.message || "No message returned"]] : [["Delivery", "Withheld"], ["Reason", response.reason || "The key did not pass the security check"]];
+      return accepted ? [["Ciphertext", ciphertext ? `${ciphertext.slice(0, 48)}${ciphertext.length > 48 ? "…" : ""}` : "Not returned"], ["Transmission", "Encrypted envelope stored for this session"]] : [["Ciphertext", "Not created"], ["Transmission", "Blocked by security decision"]];
+    case 14:
+      return accepted ? [["Decryption", "Authenticated and completed"], ["BB84 key match", typeof response.receiver?.fingerprints_match === "boolean" ? response.receiver.fingerprints_match ? "Yes" : "No" : "Not applicable"], ["Authentication", response.receiver?.authenticated ? "Valid" : "Not returned"]] : [["Decryption", "Not attempted"], ["Receiver status", "No ciphertext delivered"]];
+    case 15:
+      return [["Modified ciphertext", response.security_status?.tampering_detection || data.status || "NOT_TESTED"], ["AES-GCM action", "Rejected modified ciphertext"]];
+    case 16:
+      return accepted ? [["Delivery", "Authenticated message available in receiver inbox"], ["Plaintext", "Available after receiver authentication"]] : [["Delivery", "Withheld"], ["Reason", response.reason || "The required key establishment did not pass"]];
     default:
       return [];
   }
@@ -324,12 +362,12 @@ function renderPipelineRows(trace, response, progress = {}) {
 
 async function playPipeline(response) {
   const trace = response.step_trace;
-  if (!Array.isArray(trace) || trace.length !== 13) {
-    throw new Error("The message response did not contain the expected 13-step trace.");
+  if (!Array.isArray(trace) || trace.length !== 16) {
+    throw new Error("The message response did not contain the expected 16-step trace.");
   }
   const session = response.session_id || "session unavailable";
   byId("pipeline-session").textContent = `SESSION ${session.slice(0, 8).toUpperCase()}`;
-  byId("pipeline-summary").textContent = "Backend returned its recorded trace; presenting the 13 stages in order.";
+  byId("pipeline-summary").textContent = "Backend returned its recorded trace; presenting the 16 stages in order.";
 
   for (let index = 0; index < trace.length; index += 1) {
     const status = pipelineFinalStatus(trace[index], response);
@@ -345,7 +383,7 @@ async function playPipeline(response) {
     renderPipelineRows(trace, response, { completedThrough: index + 1, runningIndex: index + 1 });
   }
   renderPipelineRows(trace, response, { completedThrough: trace.length });
-  byId("pipeline-summary").textContent = `SECURITY ${response.key_status}: a fresh key protected this message, and the receiver authenticated and recovered it.`;
+  byId("pipeline-summary").textContent = "Key establishment completed, AES-GCM authenticated the message, and modified ciphertext was rejected.";
 }
 
 function renderPipelineRequestFailure(error) {
@@ -463,15 +501,50 @@ async function loadDepartments() {
 async function refreshStatus() {
   try {
     const status = await api("/api/status");
-    showStatusValue("status-qkd", status.latest_key_status || "Ready");
-    showStatusValue("status-pqc", "NOT IMPLEMENTED", "pqc-status-value");
-    showStatusValue("status-pqc-inline", "NOT IMPLEMENTED", "pqc-status-value");
+    const keyStatus = status.latest_key_status || "NOT_RUN";
+    showStatusValue("status-qkd", keyStatus);
+    showStatusValue("status-qkd-inline", keyStatus);
+    showStatusValue("status-pqc-inline", status.pqc?.status || "ML-KEM-768 unavailable", "pqc-status-value");
     showStatusValue("status-communication", status.communication_status.replaceAll("_", " "));
-    showStatusValue("status-interception", status.interception_status.replaceAll("_", " "));
+    showStatusValue("status-interception-inline", status.interception_status.replaceAll("_", " "));
     byId("dashboard-session").textContent = status.latest_session_id ? `SESSION ${status.latest_session_id.slice(0, 8).toUpperCase()}` : "NO ACTIVE SESSION";
   } catch (error) {
     toast(error.message);
   }
+}
+
+function updateSecurityStatus(response) {
+  const status = response.security_status || {};
+  const bb84Status = status.bb84 || response.key_status || "Not assessed";
+  const accepted = bb84Status === "ACCEPTED";
+  const qberStatus = Number.isFinite(status.qber)
+    ? `${formatQber(status.qber)} / threshold ${formatQber(status.qber_threshold)} · key ${response.final_key_length ?? "not returned"} bits`
+    : "Not assessed";
+  const mlkemStatus = status.mlkem || "NOT_REPORTED";
+  const hybridStatus = status.hybrid_derivation || "NOT_APPLICABLE";
+  const encryptionStatus = status.aes_gcm_encryption || "NOT_PERFORMED";
+  const receiverStatus = status.aes_gcm_decryption || "NOT_PERFORMED";
+  showStatusValue("status-qkd", bb84Status);
+  showStatusValue("status-qkd-inline", bb84Status);
+  showStatusValue("status-qber", qberStatus);
+  showStatusValue("status-pqc", mlkemStatus, "pqc-status-value");
+  showStatusValue("status-hybrid", hybridStatus);
+  showStatusValue("status-aes", encryptionStatus);
+  showStatusValue("status-decryption", receiverStatus);
+  showStatusValue("status-communication", response.blocked ? "MESSAGE BLOCKED" : "ENCRYPTED / SENT");
+  showDemoStage(
+    "demo-stage-bb84",
+    Number.isFinite(status.qber) ? `${bb84Status} · QBER ${formatQber(status.qber)}` : bb84Status,
+    accepted ? "done" : response.blocked ? "rejected" : "failed",
+  );
+  showDemoStage("demo-stage-mlkem", mlkemStatus, mlkemStatus === "ESTABLISHED" ? "done" : "waiting");
+  showDemoStage("demo-stage-hybrid", hybridStatus, hybridStatus === "DERIVED" ? "done" : "waiting");
+  showDemoStage("demo-stage-aes", encryptionStatus, encryptionStatus === "ENCRYPTED" ? "done" : "waiting");
+  showDemoStage(
+    "demo-stage-receiver",
+    receiverStatus === "AUTHENTICATED" ? "AUTHENTICATED · READY TO DISPLAY" : receiverStatus,
+    receiverStatus === "AUTHENTICATED" ? "done" : "waiting",
+  );
 }
 
 function formatRate(value) {
@@ -663,9 +736,13 @@ if (byId("quantum-play")) {
   });
 }
 
-function renderRun(result, revealKeys = false) {
+function renderRun(result) {
   state.currentRun = result;
   state.keyVerifiedSession = null;
+  state.currentCircuit = result.attack_enabled ? "attack" : "normal";
+  document.querySelectorAll("[data-circuit]").forEach((button) => {
+    button.classList.toggle("selected", button.dataset.circuit === state.currentCircuit);
+  });
   const arrays = result.arrays;
   byId("metric-qubits").textContent = result.qubits_transmitted;
   byId("metric-matching").textContent = `${result.matching_positions_count} / ${result.qubits_transmitted}`;
@@ -710,15 +787,11 @@ function renderRun(result, revealKeys = false) {
   byId("encrypt-send").disabled = true;
   byId("verify-result").textContent = result.key_status === "ACCEPTED" ? "Key available · verify before sending" : `NOT VERIFIED · ${result.key_status}`;
   byId("verify-result").className = `inline-status ${result.key_status === "ACCEPTED" ? "" : "bad"}`;
-  byId("key-reveal-output").classList.toggle("hidden", !(revealKeys && result.revealed_keys));
-  if (revealKeys && result.revealed_keys) {
-    byId("key-reveal-bits").textContent = `Alice: ${result.revealed_keys.alice.join("")} | Bob: ${result.revealed_keys.bob.join("")}`;
-  }
   refreshStatus();
   if (state.currentRun) loadCircuit();
 }
 
-async function runSimulation(attack = false, reveal = byId("reveal-key").checked) {
+async function runSimulation(attack = false) {
   const button = byId(attack ? "attack-run" : "run-normal");
   const loading = byId("run-loading");
   const n = Number(byId("qubit-count").value || 256);
@@ -726,13 +799,13 @@ async function runSimulation(attack = false, reveal = byId("reveal-key").checked
   button.disabled = true;
   loading.classList.remove("hidden");
   try {
-    const result = await api(`/api/bb84/run?reveal_key=${reveal}`, { method: "POST", body: JSON.stringify(state.lastRequest) });
+    const result = await api("/api/bb84/run", { method: "POST", body: JSON.stringify(state.lastRequest) });
     state.encrypted = null;
     byId("cipher-output").classList.add("hidden");
     byId("decrypted-output").classList.add("hidden");
     byId("receiver-state").classList.remove("hidden");
     byId("decrypt-message").disabled = true;
-    renderRun(result, reveal);
+    renderRun(result);
     if (attack) setView("attack");
     else if (button.id === "run-normal") setView("bb84");
   } catch (error) {
@@ -744,12 +817,8 @@ async function runSimulation(attack = false, reveal = byId("reveal-key").checked
 }
 
 byId("run-normal").addEventListener("click", () => runSimulation(false));
-byId("attack-run").addEventListener("click", () => runSimulation(true, false));
-byId("attack-normal").addEventListener("click", () => runSimulation(false, false));
-byId("reveal-key").addEventListener("change", async () => {
-  if (!state.lastRequest) return;
-  await runSimulation(state.lastRequest.attack, byId("reveal-key").checked);
-});
+byId("attack-run").addEventListener("click", () => runSimulation(true));
+byId("attack-normal").addEventListener("click", () => runSimulation(false));
 
 async function loadCircuit() {
   if (!state.currentRun) return;
@@ -823,11 +892,20 @@ if (composerSendButton) {
       return;
     }
     const spinner = byId("composer-spinner");
-    const message = (byId("message-textarea")?.value || "").trim();
-    if (!message) {
+    const message = byId("message-textarea")?.value || "";
+    if (!message.trim()) {
       toast("Please enter a message before sending.");
       return;
     }
+    resetLiveSecurityStatus();
+    showStatusValue("status-communication", "IN PROGRESS");
+    state.encrypted = null;
+    byId("dashboard-decrypt-button").disabled = true;
+    byId("dashboard-decrypted-message").textContent = "";
+    byId("dashboard-decrypted-message").classList.add("hidden");
+    byId("dashboard-decrypt-error").textContent = "";
+    byId("dashboard-decrypt-error").classList.add("hidden");
+    byId("receiver-inbox").textContent = "Receiver: security checks are in progress.";
     if (spinner) spinner.classList.remove("hidden");
     composerSendButton.disabled = true;
     try {
@@ -837,13 +915,16 @@ if (composerSendButton) {
           sender,
           receiver,
           message,
+          security_mode: "hybrid",
           n_qubits: Number(byId("qubits-input")?.value || 256),
           attack: Boolean(byId("eve-toggle")?.checked),
           intercept_fraction: 1.0,
+          qber_threshold: Number(byId("qber-threshold")?.value || 0.11),
           noise_probability: 0.0,
           seed: byId("seed-input") && byId("seed-input").value !== "" ? Number(byId("seed-input").value) : null,
         }),
       });
+      updateSecurityStatus(response);
       state.encrypted = response.envelope || null;
       byId("dashboard-decrypt-button").disabled = response.blocked || !state.encrypted;
       byId("dashboard-decrypted-message").classList.add("hidden");
@@ -864,9 +945,23 @@ if (composerSendButton) {
       } else if (inbox) {
         inbox.textContent = `Receiver: ${receiver} has an encrypted message. Decrypt it to display the contents.`;
       }
-      await refreshSessionGraph(true);
       toast(response.blocked ? (response.reason || "Message withheld.") : "Encrypted and sent securely.");
     } catch (error) {
+      const mlkemFailed = error.message.includes("ML-KEM-768 key establishment failed");
+      showStatusValue("status-qkd", "RESULT NOT RETURNED");
+      showStatusValue("status-qkd-inline", "RESULT NOT RETURNED");
+      showStatusValue("status-qber", "RESULT NOT RETURNED");
+      showStatusValue("status-pqc", mlkemFailed ? "FAILED" : "NOT PERFORMED", "pqc-status-value");
+      showStatusValue("status-hybrid", "NOT PERFORMED");
+        showStatusValue("status-aes", "NOT PERFORMED");
+        showStatusValue("status-decryption", "NOT PERFORMED");
+      showStatusValue("status-communication", "MESSAGE NOT SENT");
+      showDemoStage("demo-stage-bb84", "RESULT NOT RETURNED", "failed");
+      showDemoStage("demo-stage-mlkem", mlkemFailed ? "FAILED" : "NOT PERFORMED", mlkemFailed ? "failed" : "waiting");
+      showDemoStage("demo-stage-hybrid", "NOT PERFORMED", "waiting");
+      showDemoStage("demo-stage-aes", "NOT PERFORMED", "waiting");
+      showDemoStage("demo-stage-receiver", "NOT PERFORMED", "waiting");
+      byId("receiver-inbox").textContent = "Receiver: message was not sent.";
       toast(error.message);
     } finally {
       if (spinner) spinner.classList.add("hidden");
@@ -887,15 +982,28 @@ byId("dashboard-decrypt-button").addEventListener("click", async () => {
   }
   button.disabled = true;
   button.textContent = "Decrypting…";
+  output.textContent = "";
+  output.classList.add("hidden");
   try {
     const response = await api("/api/message/receive", {
       method: "POST",
       body: JSON.stringify({ session_id: state.currentRun.session_id }),
     });
+    if (!response.authenticated || typeof response.message !== "string") {
+      throw new Error("Message authentication failed; plaintext was withheld.");
+    }
     output.textContent = response.message;
+    showStatusValue("status-decryption", "AUTHENTICATED");
+    showDemoStage("demo-stage-receiver", "AUTHENTICATED · MESSAGE RELEASED", "done");
+    showStatusValue("status-communication", "MESSAGE RECEIVED");
     output.classList.remove("hidden");
     byId("receiver-inbox").textContent = "Receiver: message authenticated and decrypted.";
+    await refreshHistory();
   } catch (cause) {
+    showStatusValue("status-decryption", "FAILED");
+    showDemoStage("demo-stage-receiver", "FAILED · PLAINTEXT WITHHELD", "failed");
+    output.textContent = "";
+    output.classList.add("hidden");
     error.textContent = cause.message;
     error.classList.remove("hidden");
     button.disabled = false;
@@ -918,47 +1026,6 @@ async function refreshHistory() {
     renderHistory(entries);
   } catch (error) {
     toast(error.message);
-  }
-}
-
-async function refreshSessionGraph(quiet = false) {
-  try {
-    const response = await api("/api/messages");
-    const messages = (response.messages || []).slice(0, 8).reverse();
-    const sessions = await Promise.all(messages.map(async (entry) => {
-      try {
-        const detail = await api(`/api/messages/${encodeURIComponent(entry.message_id)}`);
-        const bb84 = detail.bb84 || {};
-        const matching = detail.matching_count ?? bb84.matching_positions_count;
-        const sifted = detail.sifted_length ?? bb84.sifted_length;
-        const keyLength = detail.final_key_length ?? bb84.final_key_length;
-        if (![matching, sifted, keyLength].every(Number.isFinite)) return null;
-        return { entry, matching, sifted, keyLength };
-      } catch {
-        return null;
-      }
-    }));
-    const rows = sessions.filter(Boolean);
-    const note = byId("session-key-note");
-    if (state.sessionChart) state.sessionChart.destroy();
-    state.sessionChart = null;
-    if (!rows.length) {
-      note.textContent = messages.length ? "Not returned. No recent session details are available from the API." : "No message sessions yet. Send a message to compare returned matching, sifted, and final-key lengths.";
-      return;
-    }
-    const labels = rows.map(({ entry }) => `${entry.sender} → ${entry.receiver} · ${entry.session_id.slice(0, 6)}`);
-    state.sessionChart = new Chart(byId("session-key-chart"), {
-      type: "line",
-      data: { labels, datasets: [
-        { label: "Matching positions", data: rows.map((row) => row.matching), borderColor: "#63d7ef", backgroundColor: "#63d7ef", pointRadius: 3, spanGaps: false },
-        { label: "Sifted positions", data: rows.map((row) => row.sifted), borderColor: "#9d8cff", backgroundColor: "#9d8cff", pointRadius: 3, spanGaps: false },
-        { label: "Final key length", data: rows.map((row) => row.keyLength), borderColor: "#ad9aff", backgroundColor: "#ad9aff", pointRadius: 3, spanGaps: false },
-      ] },
-      options: chartOptions("Returned bit positions"),
-    });
-    note.textContent = rows.map(({ entry, matching, sifted, keyLength }) => `${entry.sender} → ${entry.receiver}: matching ${matching}, sifted ${sifted}, final key ${keyLength}, QBER ${formatRate(entry.qber)}`).join(" · ");
-  } catch (error) {
-    if (!quiet) toast(error.message);
   }
 }
 
@@ -1024,9 +1091,7 @@ byId("decrypt-message").addEventListener("click", async () => {
 
 function destroyCharts() {
   if (state.qberChart) state.qberChart.destroy();
-  if (state.detectionChart) state.detectionChart.destroy();
   state.qberChart = null;
-  state.detectionChart = null;
 }
 
 function drawComparison(result) {
@@ -1051,22 +1116,6 @@ function drawComparison(result) {
     ] },
     options: chartOptions("QBER"),
   });
-  const rows = result.items || [];
-  state.detectionChart = new Chart(byId("detection-chart"), {
-    type: "line",
-    data: { labels: rows.map((row) => row.qubits), datasets: [
-      { label: "Detection rate", data: rows.map((row) => row.detection_rate), borderColor: "#67c9d0", backgroundColor: "#67c9d0", pointRadius: 4, spanGaps: false },
-    ] },
-    options: chartOptions("Detection rate", 1),
-  });
-  const detectionRows = rows.map((row) => {
-    const detectionRate = comparisonRate(row.detection_rate);
-    const insufficient = Number.isFinite(row.insufficient_fraction)
-      ? `${(row.insufficient_fraction * 100).toFixed(0)}% insufficient`
-      : "insufficient fraction not returned";
-    return `${row.qubits}: ${detectionRate}${detectionRate.includes("n/a") ? "" : " detected"} / ${insufficient}`;
-  });
-  byId("detection-note").textContent = detectionRows.join(" · ") || "Insufficient runs are shown as gaps, not zero detections.";
   updateComparisonDecision(result);
 }
 
@@ -1110,7 +1159,6 @@ function showComparisonSummary(result) {
   const parts = [
     ["NORMAL MEAN QBER", comparisonRate(result.normal?.mean_qber, normalAvailable)],
     ["ATTACK MEAN QBER", comparisonRate(result.attack?.mean_qber, attackAvailable)],
-    ["DETECTION", comparisonRate(result.detection_rate, attackAvailable)],
     ["FALSE ALARM", comparisonRate(result.false_alarm_rate, normalAvailable)],
   ];
   const summary = byId("experiment-summary");
@@ -1148,15 +1196,12 @@ byId("run-comparison").addEventListener("click", async () => {
   const button = byId("run-comparison");
   button.disabled = true;
   try {
-    const [comparisonJob, detectionJob] = await Promise.all([
-      api("/api/experiments/compare", { method: "POST", body: JSON.stringify({ runs: 10, n_qubits: 256, base_seed: 21 }) }),
-      api("/api/experiments/detection-vs-qubits", { method: "POST", body: JSON.stringify({ qubit_counts: [32, 64, 128, 256], runs: 6, base_seed: 21 }) }),
-    ]);
-    const [comparison, detection] = await Promise.all([
-      pollJob(comparisonJob.job_id, "COMPARING NORMAL / ATTACK RUNS"),
-      pollJob(detectionJob.job_id, "MEASURING DETECTION VS QUBIT COUNT"),
-    ]);
-    drawComparison({ ...comparison, items: detection.items });
+    const comparisonJob = await api("/api/experiments/compare", {
+      method: "POST",
+      body: JSON.stringify({ runs: 10, n_qubits: 256, base_seed: 21 }),
+    });
+    const comparison = await pollJob(comparisonJob.job_id, "COMPARING NORMAL / ATTACK RUNS");
+    drawComparison(comparison);
     showComparisonSummary(comparison);
     toast("Experiment data is current.");
   } catch (error) {
@@ -1171,8 +1216,7 @@ async function loadLastComparison() {
   try {
     const response = await api("/api/experiments/last");
     if (response.result) {
-      const detection = await api("/api/experiments/last-detection").catch(() => ({ result: null }));
-      drawComparison({ ...response.result, items: detection.result?.items || [] });
+      drawComparison(response.result);
       showComparisonSummary(response.result);
     }
   } catch (error) {
@@ -1187,10 +1231,9 @@ async function initialize() {
   await loadDepartments();
   await refreshStatus();
   await refreshHistory();
-  await refreshSessionGraph(true);
   const last = await api("/api/experiments/last").catch(() => ({ result: null }));
   if (last.result) {
-    drawComparison({ ...last.result, items: [] });
+    drawComparison(last.result);
     showComparisonSummary(last.result);
   }
 }

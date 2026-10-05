@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from backend.app.messaging.secure_channel import EncryptedMessage
@@ -21,6 +22,9 @@ class SessionRecord:
     circuit_cache: dict[str, dict[str, str]] = field(default_factory=dict)
     sender: str | None = None
     receiver: str | None = None
+    security_mode: str = "bb84"
+    message_id: str | None = None
+    mlkem_receiver_secret: bytes | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -55,7 +59,6 @@ class DashboardState:
         self.jobs: dict[str, JobRecord] = {}
         self.latest_session_id: str | None = None
         self.last_comparison: dict[str, Any] | None = None
-        self.last_detection: dict[str, Any] | None = None
 
     def create_session(self, result: dict[str, Any]) -> SessionRecord:
         """Store a result and return its unpredictable session identifier."""
@@ -94,6 +97,27 @@ class DashboardState:
         with self._lock:
             return self.messages.get(message_id)
 
+    def record_authenticated_message(
+        self,
+        session_id: str,
+        message: str,
+        receiver_decryption_seconds: float,
+    ) -> None:
+        """Add plaintext to history only after the receiver authenticates it."""
+        with self._lock:
+            session = self.sessions.get(session_id)
+            if session is None or session.message_id is None:
+                return
+            record = self.messages.get(session.message_id)
+            if record is None:
+                return
+            record.history["decrypted_message"] = message
+            record.history["received_at"] = datetime.now(timezone.utc).isoformat()
+            record.details["decrypted_message"] = message
+            timings = record.details.setdefault("timings_seconds", {})
+            timings["receiver_decryption"] = receiver_decryption_seconds
+            record.history["timings_seconds"] = timings.copy()
+
     def list_messages(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return newest history rows first."""
         with self._lock:
@@ -131,8 +155,6 @@ class DashboardState:
             job.status = "done"
             if cache == "comparison":
                 self.last_comparison = result
-            elif cache == "detection":
-                self.last_detection = result
 
     def update_job_progress(self, job_id: str, progress: float) -> None:
         """Update a running job's progress within the shared lock."""
